@@ -25,9 +25,12 @@ PORT="${PORT:-8080}"
 API_DIR="$ROOT/apps/api"
 DB_FILE="$API_DIR/prisma/prod.db"
 export DATABASE_URL="file:$DB_FILE"
-export NODE_ENV=production
 export SERVE_STATIC=true
 export PORT
+# NOTE: do NOT export NODE_ENV=production here — it makes `npm install` skip
+# devDependencies (typescript/vite/tailwind/prisma), which breaks the build.
+# We set NODE_ENV=production only on the server launch line below.
+unset NODE_ENV
 
 # ---- Pretty output ----
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
@@ -60,19 +63,24 @@ fi
 
 # ---- Build (skippable) ----
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  bold "📦 Installing dependencies…"
-  npm install
+  bold "📦 Installing dependencies (incl. dev — needed to build)…"
+  npm install --include=dev
 
   bold "🗄️  Preparing database…"
-  FRESH_DB=0
-  [ -f "$DB_FILE" ] || FRESH_DB=1
   npm run db:generate -w apps/api
   npm run db:push -w apps/api
-  if [ "$FRESH_DB" = "1" ] || [ "${RESEED:-0}" = "1" ]; then
+  # Seed if the DB is empty (covers fresh + leftover-empty DBs) or RESEED=1.
+  VENUE_COUNT="$(cd "$API_DIR" && node -e '
+    const { PrismaClient } = require("@prisma/client");
+    const p = new PrismaClient();
+    p.venue.count().then(c => { console.log(c); process.exit(0); })
+      .catch(() => { console.log(0); process.exit(0); });
+  ' 2>/dev/null || echo 0)"
+  if [ "${RESEED:-0}" = "1" ] || [ "${VENUE_COUNT:-0}" = "0" ]; then
     bold "🌱 Seeding demo data…"
     npm run db:seed -w apps/api
   else
-    green "Existing database kept (set RESEED=1 to reset)."
+    green "Existing database kept ($VENUE_COUNT venues; set RESEED=1 to reset)."
   fi
 
   bold "🏗️  Building web PWA (VITE_API_BASE empty → same-origin /api)…"
@@ -86,7 +94,7 @@ fi
 
 # ---- Start the server (single origin: API serves web build) ----
 bold "🚀 Starting server on http://localhost:$PORT …"
-( cd "$API_DIR" && node dist/index.js ) &
+( cd "$API_DIR" && NODE_ENV=production node dist/index.js ) &
 SERVER_PID=$!
 
 # Wait for health
