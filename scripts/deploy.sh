@@ -85,18 +85,23 @@ stop_existing() {
 
 SERVER_PID=""
 NGROK_PID=""
+CLEANED=0
 cleanup() {
+  [ "$CLEANED" = "1" ] && return 0
+  CLEANED=1
   echo ""
-  yellow "Shutting down…"
+  yellow "Shutting down (stopping server + tunnel)…"
   [ -n "$NGROK_PID" ]  && kill "$NGROK_PID"  2>/dev/null || true
   if [ -n "$SERVER_PID" ]; then
     pkill -P "$SERVER_PID" 2>/dev/null || true   # children (concurrently → api/web)
     kill "$SERVER_PID"     2>/dev/null || true
   fi
   stop_existing
-  exit 0
 }
-trap cleanup INT TERM
+# EXIT covers "server died / script ended for any reason" → ngrok never orphaned.
+# INT/TERM (Ctrl+C) clean up then exit. The CLEANED guard prevents double-runs.
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
 
 # ---- Prerequisite checks ----
 command -v node >/dev/null 2>&1 || { red "node is required (install Node 20+)."; exit 1; }
@@ -172,7 +177,7 @@ for i in $(seq 1 40); do
     red "App failed to start. See output above."; exit 1
   fi
   sleep 1
-  [ "$i" = "40" ] && { red "App did not become healthy in time."; cleanup; }
+  [ "$i" = "40" ] && { red "App did not become healthy in time."; exit 1; }
 done
 
 # ---- ngrok tunnel (only when TUNNEL=1) ----
@@ -195,11 +200,11 @@ if [ "$TUNNEL" = "1" ]; then
     if ! kill -0 "$NGROK_PID" 2>/dev/null; then
       red "ngrok exited. Last log lines:"; tail -n 15 /tmp/courtup_ngrok.log
       echo ""; yellow "If this is an auth error: ngrok config add-authtoken <YOUR_TOKEN>"
-      cleanup
+      exit 1
     fi
     sleep 1
   done
-  [ -z "$PUBLIC_URL" ] && { red "Could not read the ngrok URL (see http://127.0.0.1:4040)."; cleanup; }
+  [ -z "$PUBLIC_URL" ] && { red "Could not read the ngrok URL (see http://127.0.0.1:4040)."; exit 1; }
 fi
 
 # ---- Output ----
