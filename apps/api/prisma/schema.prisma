@@ -1,0 +1,103 @@
+// CourtUp data model.
+// Local dev: SQLite. To deploy on GCP with Postgres, change `provider` to
+// "postgresql" and point DATABASE_URL at Cloud SQL — the model is unchanged.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?  @unique
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  bookings    Booking[]
+  hostedGames Game[]       @relation("HostedGames")
+  joinedGames GamePlayer[]
+}
+
+model Venue {
+  id          String   @id @default(cuid())
+  name        String
+  area        String // e.g. "Sector 63A, Gurgaon"
+  city        String
+  rating      Float    @default(0)
+  ratingCount Int      @default(0)
+  imageUrl    String?
+  sports      String // comma-separated, e.g. "Badminton,Pickleball"
+  priceFrom   Int // lowest facility price, for "₹X onwards"
+  createdAt   DateTime @default(now())
+
+  facilities Facility[]
+  games      Game[]
+}
+
+model Facility {
+  id         String   @id @default(cuid())
+  venueId    String
+  name       String // e.g. "Badminton (Synthetic+Wooden)"
+  sport      String
+  openHour   Int // 24h, e.g. 5  (05:00)
+  closeHour  Int // 24h, e.g. 24 (12:00 AM)
+  pricePerSlot Int // per 1-hour slot, e.g. 350
+  courts     Int      @default(4) // capacity per hour -> drives "X left"
+  createdAt  DateTime @default(now())
+
+  venue    Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+}
+
+model Booking {
+  id         String   @id @default(cuid())
+  facilityId String
+  userId     String
+  date       String // YYYY-MM-DD (local date of the slot)
+  startHour  Int // 24h
+  endHour    Int // 24h (startHour + 1 for a 1-hour slot)
+  price      Int
+  status     String   @default("CONFIRMED") // CONFIRMED | CANCELLED
+  createdAt  DateTime @default(now())
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId, date, startHour])
+}
+
+model Game {
+  id             String   @id @default(cuid())
+  hostId         String
+  venueId        String
+  sport          String
+  gameType       String   @default("Friendly") // Friendly | Competitive
+  format         String   @default("Doubles") // Singles | Doubles
+  startsAt       DateTime
+  endsAt         DateTime
+  maxPlayers     Int      @default(5)
+  perPlayerShare Int      @default(0)
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  host    User         @relation("HostedGames", fields: [hostId], references: [id], onDelete: Cascade)
+  venue   Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  players GamePlayer[]
+}
+
+model GamePlayer {
+  id       String   @id @default(cuid())
+  gameId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+}

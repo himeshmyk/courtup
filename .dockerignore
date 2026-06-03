@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/dist
+apps/api/prisma/dev.db
+apps/api/prisma/*.db
+.git
+.DS_Store
+*.log
+*.mp4
+*.jpeg
+WhatsApp*
