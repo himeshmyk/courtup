@@ -73,9 +73,31 @@ npm run db:setup    # re-pushes schema + re-seeds
 
 ---
 
+## ⚡ One command: deploy, run & get a public URL
+
+```bash
+./scripts/deploy.sh
+```
+
+Builds the PWA + API, runs them as a **single origin** (port 8080), opens an
+**ngrok** tunnel, and prints the public **HTTPS URL** to open on your phone.
+Stop with `Ctrl+C`.
+
+Prereqs: Node 20+ and [ngrok](https://ngrok.com/download) (`brew install ngrok`,
+then `ngrok config add-authtoken <token>` once).
+
+Handy flags:
+
+```bash
+PORT=9000 ./scripts/deploy.sh      # different local port
+SKIP_BUILD=1 ./scripts/deploy.sh   # fast restart (reuse last build/db)
+RESEED=1 ./scripts/deploy.sh       # wipe & re-seed demo data
+```
+
 ## 📱 Install on your Android phone (via ngrok)
 
 PWA install requires **HTTPS**. ngrok gives you a public HTTPS URL to your laptop.
+(The `./scripts/deploy.sh` command above automates everything in this section.)
 
 **Option A — single URL (recommended):** run the production container so one URL
 serves both the app and API (see Docker below), then:
