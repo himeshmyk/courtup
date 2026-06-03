@@ -81,16 +81,32 @@ npm run db:setup    # re-pushes schema + re-seeds
 
 Builds the PWA + API, runs them as a **single origin** (port 8080), opens an
 **ngrok** tunnel, and prints the public **HTTPS URL** to open on your phone.
+If a previous run is still up, the script **stops it first**, then rebuilds.
 Stop with `Ctrl+C`.
 
 Prereqs: Node 20+ and [ngrok](https://ngrok.com/download) (`brew install ngrok`,
 then `ngrok config add-authtoken <token>` once).
 
-Handy flags:
+### 🔥 Hot-reload mode (edit live on the ngrok URL)
 
 ```bash
-PORT=9000 ./scripts/deploy.sh      # different local port
-SKIP_BUILD=1 ./scripts/deploy.sh   # fast restart (reuse last build/db)
+MODE=dev ./scripts/deploy.sh
+```
+
+Runs Vite (frontend **HMR**) + the API in watch mode and tunnels ngrok to the
+dev server. Edit anything in `apps/web` or `apps/api` and it reloads on the
+public URL — no rebuild. (Vite is configured to accept the ngrok host and route
+HMR's websocket over `wss:443` when tunnelling.)
+
+Use plain `./scripts/deploy.sh` (prod build) when sharing for a demo — it's a
+faster, cacheable static bundle; use `MODE=dev` while actively developing.
+
+### Flags
+
+```bash
+MODE=dev ./scripts/deploy.sh       # hot reload (default is prod build)
+PORT=9000 ./scripts/deploy.sh      # prod: different local port
+SKIP_BUILD=1 ./scripts/deploy.sh   # prod: reuse last build/db (fast)
 RESEED=1 ./scripts/deploy.sh       # wipe & re-seed demo data
 ```
 

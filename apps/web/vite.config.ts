@@ -61,5 +61,14 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
     },
+    // When tunnelling the dev server through ngrok (MODE=dev in deploy.sh),
+    // allow the ngrok host and route HMR's websocket over wss:443 so hot
+    // reload works on the public URL. Local dev is unaffected.
+    ...(process.env.TUNNEL_HMR === '1'
+      ? {
+          allowedHosts: true as const,
+          hmr: { clientPort: 443, protocol: 'wss' as const },
+        }
+      : {}),
   },
 });
