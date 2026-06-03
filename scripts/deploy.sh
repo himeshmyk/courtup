@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 #
-# CourtUp — deploy & run, then expose a public HTTPS URL via ngrok.
+# CourtUp — deploy & run, locally or exposed publicly via ngrok.
 #
-# Two modes:
+# Modes (MODE):
 #   prod (default) — builds the PWA + API and runs them as a single origin
 #                    (the API serves the built web app). Best for sharing/demo.
 #   dev            — hot reload: Vite (frontend HMR) + API (tsx watch, auto
-#                    restart). Edits reflect live on the ngrok URL.
+#                    restart). Edits reflect live without a rebuild.
+#
+# Exposure (TUNNEL):
+#   0 (default)    — run locally only; prints the http://localhost URL.
+#                    ngrok is NOT required or started.
+#   1              — also open an ngrok tunnel; prints the public HTTPS URL
+#                    (needed to install the PWA on a phone).
 #
 # Usage:
-#   ./scripts/deploy.sh                 # prod build + run + tunnel (port 8080)
-#   MODE=dev ./scripts/deploy.sh        # hot-reload mode + tunnel
+#   ./scripts/deploy.sh                 # prod build, LOCAL only (localhost URL)
+#   TUNNEL=1 ./scripts/deploy.sh        # prod build + public ngrok URL
+#   MODE=dev ./scripts/deploy.sh        # hot reload, LOCAL only
+#   MODE=dev TUNNEL=1 ./scripts/deploy.sh   # hot reload + public ngrok URL
 #   PORT=9000 ./scripts/deploy.sh       # prod: different local port
 #   SKIP_BUILD=1 ./scripts/deploy.sh    # prod: reuse last build/db (fast)
 #   RESEED=1 ./scripts/deploy.sh        # wipe & re-seed the demo database
@@ -26,6 +34,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 MODE="${MODE:-prod}"
+TUNNEL="${TUNNEL:-0}"   # 0 = localhost only (default), 1 = expose via ngrok
 API_DIR="$ROOT/apps/api"
 DB_FILE="$API_DIR/prisma/prod.db"
 
@@ -68,7 +77,9 @@ stop_existing() {
   pkill -f "node dist/index.js"       2>/dev/null || true  # prod server
   pkill -f "tsx watch src/index.ts"   2>/dev/null || true  # dev API
   pkill -f "courtup .* run dev"        2>/dev/null || true
-  pkill -x ngrok                       2>/dev/null || true  # free tier = 1 agent
+  # Only stop ngrok when we're about to start our own (free tier = 1 agent);
+  # a local-only run leaves any unrelated tunnels you have alone.
+  [ "$TUNNEL" = "1" ] && pkill -x ngrok 2>/dev/null || true
   sleep 1
 }
 
@@ -90,11 +101,12 @@ trap cleanup INT TERM
 # ---- Prerequisite checks ----
 command -v node >/dev/null 2>&1 || { red "node is required (install Node 20+)."; exit 1; }
 command -v npm  >/dev/null 2>&1 || { red "npm is required."; exit 1; }
-if ! command -v ngrok >/dev/null 2>&1; then
-  red "ngrok is not installed."
+if [ "$TUNNEL" = "1" ] && ! command -v ngrok >/dev/null 2>&1; then
+  red "TUNNEL=1 but ngrok is not installed."
   echo "  Install:  brew install ngrok   (or https://ngrok.com/download)"
   echo "  Then once: ngrok config add-authtoken <YOUR_TOKEN>"
   echo "  (free token: https://dashboard.ngrok.com/get-started/your-authtoken)"
+  echo "  Or omit TUNNEL=1 to run locally without ngrok."
   exit 1
 fi
 
@@ -163,47 +175,56 @@ for i in $(seq 1 40); do
   [ "$i" = "40" ] && { red "App did not become healthy in time."; cleanup; }
 done
 
-# ---- ngrok tunnel ----
-bold "🌐 Opening ngrok tunnel → port $TUNNEL_PORT …"
-ngrok http "$TUNNEL_PORT" --log=stdout > /tmp/courtup_ngrok.log 2>&1 &
-NGROK_PID=$!
-
+# ---- ngrok tunnel (only when TUNNEL=1) ----
 PUBLIC_URL=""
-for i in $(seq 1 30); do
-  PUBLIC_URL="$(node -e '
-    fetch("http://127.0.0.1:4040/api/tunnels")
-      .then(r => r.json())
-      .then(d => {
-        const t = (d.tunnels || []).find(x => (x.public_url||"").startsWith("https")) || (d.tunnels||[])[0];
-        if (t) process.stdout.write(t.public_url);
-      })
-      .catch(() => {});
-  ' 2>/dev/null || true)"
-  [ -n "$PUBLIC_URL" ] && break
-  if ! kill -0 "$NGROK_PID" 2>/dev/null; then
-    red "ngrok exited. Last log lines:"; tail -n 15 /tmp/courtup_ngrok.log
-    echo ""; yellow "If this is an auth error: ngrok config add-authtoken <YOUR_TOKEN>"
-    cleanup
-  fi
-  sleep 1
-done
-[ -z "$PUBLIC_URL" ] && { red "Could not read the ngrok URL (see http://127.0.0.1:4040)."; cleanup; }
+if [ "$TUNNEL" = "1" ]; then
+  bold "🌐 Opening ngrok tunnel → port $TUNNEL_PORT …"
+  ngrok http "$TUNNEL_PORT" --log=stdout > /tmp/courtup_ngrok.log 2>&1 &
+  NGROK_PID=$!
+  for i in $(seq 1 30); do
+    PUBLIC_URL="$(node -e '
+      fetch("http://127.0.0.1:4040/api/tunnels")
+        .then(r => r.json())
+        .then(d => {
+          const t = (d.tunnels || []).find(x => (x.public_url||"").startsWith("https")) || (d.tunnels||[])[0];
+          if (t) process.stdout.write(t.public_url);
+        })
+        .catch(() => {});
+    ' 2>/dev/null || true)"
+    [ -n "$PUBLIC_URL" ] && break
+    if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+      red "ngrok exited. Last log lines:"; tail -n 15 /tmp/courtup_ngrok.log
+      echo ""; yellow "If this is an auth error: ngrok config add-authtoken <YOUR_TOKEN>"
+      cleanup
+    fi
+    sleep 1
+  done
+  [ -z "$PUBLIC_URL" ] && { red "Could not read the ngrok URL (see http://127.0.0.1:4040)."; cleanup; }
+fi
 
 # ---- Output ----
+LOCAL_URL="http://localhost:$TUNNEL_PORT"
 echo ""
 green "════════════════════════════════════════════════════════════"
 bold  "  ✅ CourtUp is live!  (mode: $MODE$([ "$MODE" = dev ] && echo ' — hot reload ON'))"
 echo ""
-bold  "  📱 Open this URL on your phone (Chrome/Safari):"
-green  "     $PUBLIC_URL"
-echo ""
-echo  "     Then tap  ⋮ → Install app  (Android)  /  Share → Add to Home Screen (iOS)"
-[ "$MODE" = "dev" ] && echo "     ✏️  Edit files in apps/web or apps/api — changes reload live."
-echo ""
-echo  "  💻 Local:           http://localhost:$TUNNEL_PORT"
-echo  "  🔎 ngrok dashboard: http://127.0.0.1:4040"
+if [ "$TUNNEL" = "1" ]; then
+  bold  "  📱 Public URL (open on your phone — Chrome/Safari):"
+  green "     $PUBLIC_URL"
+  echo ""
+  echo  "     Then tap  ⋮ → Install app  (Android)  /  Share → Add to Home Screen (iOS)"
+  echo  "  💻 Local:           $LOCAL_URL"
+  echo  "  🔎 ngrok dashboard: http://127.0.0.1:4040"
+else
+  bold  "  💻 Open this URL:"
+  green "     $LOCAL_URL"
+  echo ""
+  echo  "     (Installable as a PWA in desktop Chrome on localhost.)"
+  echo  "     Want a public URL for your phone?  Re-run with  TUNNEL=1"
+fi
+[ "$MODE" = "dev" ] && echo "  ✏️  Edit files in apps/web or apps/api — changes reload live."
 green "════════════════════════════════════════════════════════════"
 echo ""
-yellow "Press Ctrl+C to stop the server and tunnel."
+yellow "Press Ctrl+C to stop$([ "$TUNNEL" = "1" ] && echo ' the server and tunnel' || echo ' the server')."
 
 wait "$SERVER_PID"

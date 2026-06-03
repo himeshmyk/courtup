@@ -73,47 +73,52 @@ npm run db:setup    # re-pushes schema + re-seeds
 
 ---
 
-## ⚡ One command: deploy, run & get a public URL
+## ⚡ One command: build & run
 
 ```bash
 ./scripts/deploy.sh
 ```
 
-Builds the PWA + API, runs them as a **single origin** (port 8080), opens an
-**ngrok** tunnel, and prints the public **HTTPS URL** to open on your phone.
+Builds the PWA + API, runs them as a **single origin**, and prints the
+**`http://localhost:8080`** URL. Runs **locally by default** — no ngrok needed.
 If a previous run is still up, the script **stops it first**, then rebuilds.
 Stop with `Ctrl+C`.
 
-Prereqs: Node 20+ and [ngrok](https://ngrok.com/download) (`brew install ngrok`,
-then `ngrok config add-authtoken <token>` once).
-
-### 🔥 Hot-reload mode (edit live on the ngrok URL)
+### 🌐 Get a public URL for your phone (`TUNNEL=1`)
 
 ```bash
-MODE=dev ./scripts/deploy.sh
+TUNNEL=1 ./scripts/deploy.sh
 ```
 
-Runs Vite (frontend **HMR**) + the API in watch mode and tunnels ngrok to the
-dev server. Edit anything in `apps/web` or `apps/api` and it reloads on the
-public URL — no rebuild. (Vite is configured to accept the ngrok host and route
-HMR's websocket over `wss:443` when tunnelling.)
+Also opens an **ngrok** tunnel and prints the public **HTTPS URL** (required to
+install the PWA on a phone). Prereqs: [ngrok](https://ngrok.com/download)
+(`brew install ngrok`, then `ngrok config add-authtoken <token>` once).
 
-Use plain `./scripts/deploy.sh` (prod build) when sharing for a demo — it's a
-faster, cacheable static bundle; use `MODE=dev` while actively developing.
+### 🔥 Hot-reload mode (`MODE=dev`)
+
+```bash
+MODE=dev ./scripts/deploy.sh            # hot reload, local
+MODE=dev TUNNEL=1 ./scripts/deploy.sh   # hot reload on the public URL
+```
+
+Runs Vite (frontend **HMR**) + the API in watch mode. Edit anything in
+`apps/web` or `apps/api` and it reloads live — no rebuild. (When tunnelling,
+Vite is configured to accept the ngrok host and route HMR over `wss:443`.)
 
 ### Flags
 
 ```bash
-MODE=dev ./scripts/deploy.sh       # hot reload (default is prod build)
-PORT=9000 ./scripts/deploy.sh      # prod: different local port
+TUNNEL=1   ./scripts/deploy.sh     # expose via ngrok (default: localhost only)
+MODE=dev   ./scripts/deploy.sh     # hot reload (default: prod build)
+PORT=9000  ./scripts/deploy.sh     # prod: different local port
 SKIP_BUILD=1 ./scripts/deploy.sh   # prod: reuse last build/db (fast)
-RESEED=1 ./scripts/deploy.sh       # wipe & re-seed demo data
+RESEED=1   ./scripts/deploy.sh     # wipe & re-seed demo data
 ```
 
 ## 📱 Install on your Android phone (via ngrok)
 
 PWA install requires **HTTPS**. ngrok gives you a public HTTPS URL to your laptop.
-(The `./scripts/deploy.sh` command above automates everything in this section.)
+(`TUNNEL=1 ./scripts/deploy.sh` automates everything in this section.)
 
 **Option A — single URL (recommended):** run the production container so one URL
 serves both the app and API (see Docker below), then:
